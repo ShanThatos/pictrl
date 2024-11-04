@@ -39,6 +39,7 @@ def run_python(config, pgroup: ProcessGroup):
     bin_dir = str(Path(venv_dir).joinpath(per_os("Scripts", "bin")))
     python_path = str(Path(bin_dir).joinpath("python"))
 
+    print("Setting up virtual environment")
     pgroup.run(f"python -m venv {venv_dir}", stream=True)
     pgroup.run(f"{python_path} -m pip install --upgrade pip", stream=True)
     for req in ["requirements.txt", "req.txt"]:
@@ -53,8 +54,10 @@ def run_python(config, pgroup: ProcessGroup):
     port = find_free_port()
     env["PORT"] = str(port)
 
+    print("Running main command")
     pgroup.run_async(config["command"], env=env, cwd=source_dir, block=True)
     if "tunnel" in config and config["tunnel"]:
+        print("Starting tunnel")
         start_tunnel(config["tunnel"], port, pgroup)
     atexit.register(pgroup.kill)
 
