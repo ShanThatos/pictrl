@@ -70,6 +70,7 @@ class ProcessGroup:
         self.__process_id_counter += 1
         process = Popen(command, shell=True, bufsize=1, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=cwd, env=env)
         setattr(process, "__block", block)
+        self.out(f"> {command}")
         Thread(target=self.capture_output, args=(command, process, self.__process_id_counter, "stdout", stream), daemon=True).start()
         Thread(target=self.capture_output, args=(command, process, self.__process_id_counter, "stderr", stream), daemon=True).start()
         self.__processes.append(process)
@@ -88,8 +89,6 @@ class ProcessGroup:
                     log.popleft()
         
         if stream:
-            if capture == "stdout":
-                self.out(f"> {command}")
             for line in process_out:
                 if not self.__running:
                     break
@@ -97,8 +96,6 @@ class ProcessGroup:
                 add_to_logs(line)
         else:
             lines = list(process_out)
-            if capture == "stdout":
-                self.out(f"> {command}")
             print("".join(lines), end="")
             add_to_logs(*lines)
 

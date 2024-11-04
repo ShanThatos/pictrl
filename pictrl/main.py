@@ -47,7 +47,8 @@ def run_python(config, pgroup: ProcessGroup):
             pgroup.run(f"{python_path} -m pip install -r {req_path}", stream=True)
 
     env = os.environ.copy() | {"PYTHONUNBUFFERED": "1"} | config["env"]
-    env["PATH"] = f"{bin_dir};{config["env"].get('PATH', '')};{os.environ.get('PATH', '')}"
+    path_sep = per_os(";", ":")
+    env["PATH"] = f"{bin_dir}{path_sep}{config["env"].get('PATH', '')}{path_sep}{os.environ.get('PATH', '')}"
     
     port = find_free_port()
     env["PORT"] = str(port)
