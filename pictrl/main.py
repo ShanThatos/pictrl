@@ -20,7 +20,7 @@ def clone(config, pgroup: ProcessGroup):
     def autoupdate():
         nonlocal pgroup, version_key
         while pgroup.running:
-            pgroup.run("git fetch origin", cwd=config["source_dir"])
+            pgroup.run(f"{per_os("", "sudo ")}git fetch origin", cwd=config["source_dir"])
             remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=config["source_dir"]))
             check_version_key = f"{json.dumps(get_config(), sort_keys=True)}-{remote_hash}"
             if version_key != check_version_key:
@@ -30,6 +30,7 @@ def clone(config, pgroup: ProcessGroup):
                 pgroup.kill()
                 break
             time.sleep(config["autoupdate"])
+        print("Autoupdate thread stopped")
     
     Thread(target=autoupdate, daemon=True).start()
 
