@@ -17,7 +17,7 @@ def clone(config, pgroup: ProcessGroup):
     
     local_hash = pgroup.get_stdout(pgroup.run("git rev-parse HEAD", cwd=config["source_dir"]))
     version_key = f"{json.dumps(config, sort_keys=True)}-{local_hash}"
-    def autoupdate():
+    def check_for_update():
         nonlocal pgroup, version_key
         while pgroup.running:
             pgroup.run(f"{per_os("", "sudo ")}git fetch origin", cwd=config["source_dir"])
@@ -30,9 +30,9 @@ def clone(config, pgroup: ProcessGroup):
                 pgroup.kill()
                 break
             time.sleep(config["autoupdate"])
-        print("Autoupdate thread stopped")
+        print("check_for_update[source] thread stopped")
     
-    Thread(target=autoupdate, daemon=True).start()
+    Thread(target=check_for_update, daemon=True).start()
 
 def run_python(config, pgroup: ProcessGroup):
     source_dir = config["source_dir"]
@@ -63,9 +63,33 @@ def run_python(config, pgroup: ProcessGroup):
     atexit.register(pgroup.kill)
 
 def main():
-    while True:
+    main_group = ProcessGroup()
+    current_pgroup = [None]
+    local_hash = main_group.get_stdout(main_group.run("git rev-parse HEAD"))
+    def check_for_update():
+        nonlocal current_pgroup, local_hash
+        while main_group.running:
+            main_group.run(f"{per_os("", "sudo ")}git fetch origin")
+            remote_hash = main_group.get_stdout(main_group.run("git rev-parse refs/remotes/origin/HEAD"))
+
+            if local_hash != remote_hash:
+                main_group.out("Stopping & restarting")
+                main_group.out(f"{local_hash=}")
+                main_group.out(f"{remote_hash=}")
+                main_group.kill()
+                active_pgroup = current_pgroup[0]
+                if active_pgroup:
+                    active_pgroup.kill()
+                break
+            time.sleep(60)
+        print("check_for_update[pictrl] thread stopped")
+    
+    Thread(target=check_for_update, daemon=True).start()
+
+    while main_group.running:
         config = get_config()
         pgroup = ProcessGroup()
+        current_pgroup[0] = pgroup
         try:
             clone(config, pgroup)
             if config["type"] == "python":
