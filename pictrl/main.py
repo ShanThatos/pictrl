@@ -25,10 +25,10 @@ def clone(config, pgroup: ProcessGroup):
                 pgroup.run(f"git fetch origin", cwd=config["source_dir"], timeout=120)
                 remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=config["source_dir"], timeout=120))
                 check_version_key = f"{json.dumps(get_config(), sort_keys=True)}-{remote_hash}"
+                pgroup.out(f"{local_hash=}")
+                pgroup.out(f"{remote_hash=}")
                 if version_key != check_version_key:
                     pgroup.out("Stopping & restarting [source]")
-                    pgroup.out(version_key)
-                    pgroup.out(check_version_key)
                     pgroup.kill()
                     break
             except Exception as e:
@@ -77,11 +77,10 @@ def main():
                 main_group.out("Checking for update [pictrl]")
                 main_group.run(f"git fetch origin", timeout=120)
                 remote_hash = main_group.get_stdout(main_group.run("git rev-parse refs/remotes/origin/HEAD", timeout=120))
-
+                main_group.out(f"{local_hash=}")
+                main_group.out(f"{remote_hash=}")
                 if local_hash != remote_hash:
                     main_group.out("Stopping & restarting [pictrl]")
-                    main_group.out(f"{local_hash=}")
-                    main_group.out(f"{remote_hash=}")
                     main_group.kill()
                     active_pgroup = current_pgroup[0]
                     if active_pgroup:
