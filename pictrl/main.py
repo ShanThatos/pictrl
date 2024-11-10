@@ -23,6 +23,7 @@ def clone(config, pgroup: ProcessGroup):
             try:
                 pgroup.out("Checking for update [source]")
                 pgroup.run(f"git fetch origin", cwd=config["source_dir"], timeout=120)
+                pgroup.out("Checking for update [source] 1")
                 remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=config["source_dir"], timeout=120))
                 check_version_key = f"{json.dumps(get_config(), sort_keys=True)}-{remote_hash}"
                 pgroup.out(f"{local_hash=}")
@@ -76,6 +77,7 @@ def main():
             try:
                 main_group.out("Checking for update [pictrl]")
                 main_group.run(f"git fetch origin", timeout=120)
+                main_group.out("Checking for update [pictrl] 1")
                 remote_hash = main_group.get_stdout(main_group.run("git rev-parse refs/remotes/origin/HEAD", timeout=120))
                 main_group.out(f"{local_hash=}")
                 main_group.out(f"{remote_hash=}")
