@@ -16,15 +16,15 @@ def autoupdate(name: str, pgroup: ProcessGroup, cwd: Optional[str] = None, on_re
         while pgroup.running:
             try:
                 pgroup.out(f"Checking for update [{name}]")
-                pgroup.run(f"git fetch origin", cwd=cwd, timeout=120)
-                pgroup.out(f"Checking for update [{name}] 1")
-                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=cwd, timeout=120))
+                pgroup.run(f"git fetch origin", cwd=cwd)
+                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=cwd))
                 pgroup.out(f"[{name}] {local_hash=}")
                 pgroup.out(f"[{name}] {remote_hash=}")
                 if local_hash != remote_hash:
                     pgroup.out(f"Stopping & restarting [{name}]")
                     pgroup.kill()
-                    on_restart()
+                    if on_restart:
+                        on_restart()
                     break
             except Exception as e:
                 pgroup.out(e)
