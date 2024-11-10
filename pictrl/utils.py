@@ -74,10 +74,11 @@ class ProcessGroup:
     def __start_process(self, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = True, block: bool = False):
         if len(self.__processes) >= 20:
             i = 0
-            while i < len(self.__processes) and i < 10:
+            while i < len(self.__processes) and len(self.__processes) > 5:
                 if self.__processes[i].poll() is not None:
                     self.__processes.pop(i)
-                    break
+                else:
+                    i += 1
 
         self.__process_id_counter += 1
         process = Popen(command, shell=True, bufsize=1, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=cwd, env=env)

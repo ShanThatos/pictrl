@@ -1,43 +1,43 @@
 import atexit
-import json
 import os
 import time
 
 from pathlib import Path
 from threading import Thread
+from typing import Callable, Optional
 
 from pictrl.cloudflared import start_tunnel
 from pictrl.utils import ProcessGroup, get_config, delete_folder, find_free_port, per_os
+
+def autoupdate(name: str, pgroup: ProcessGroup, cwd: Optional[str] = None, on_restart: Optional[Callable] = None):
+    local_hash = pgroup.get_stdout(pgroup.run("git rev-parse HEAD", cwd=cwd))
+    def check_for_update():
+        nonlocal pgroup, local_hash
+        while pgroup.running:
+            try:
+                pgroup.out(f"Checking for update [{name}]")
+                pgroup.run(f"git fetch origin", cwd=cwd, timeout=120)
+                pgroup.out(f"Checking for update [{name}] 1")
+                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=cwd, timeout=120))
+                pgroup.out(f"[{name}] {local_hash=}")
+                pgroup.out(f"[{name}] {remote_hash=}")
+                if local_hash != remote_hash:
+                    pgroup.out(f"Stopping & restarting [{name}]")
+                    pgroup.kill()
+                    on_restart()
+                    break
+            except Exception as e:
+                pgroup.out(e)
+            time.sleep(60)
+        print(f"check_for_update [{name}] thread stopped")
+    
+    Thread(target=check_for_update, daemon=True).start()
 
 def clone(config, pgroup: ProcessGroup):
     source_dir = config["source_dir"]
     if Path(source_dir).exists():
         delete_folder(source_dir)
     pgroup.run(f"git clone {config["git"]} {source_dir}", stream=True)
-    
-    local_hash = pgroup.get_stdout(pgroup.run("git rev-parse HEAD", cwd=config["source_dir"]))
-    version_key = f"{json.dumps(config, sort_keys=True)}-{local_hash}"
-    def check_for_update():
-        nonlocal pgroup, version_key
-        while pgroup.running:
-            try:
-                pgroup.out("Checking for update [source]")
-                pgroup.run(f"git fetch origin", cwd=config["source_dir"], timeout=120)
-                pgroup.out("Checking for update [source] 1")
-                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=config["source_dir"], timeout=120))
-                check_version_key = f"{json.dumps(get_config(), sort_keys=True)}-{remote_hash}"
-                pgroup.out(f"{local_hash=}")
-                pgroup.out(f"{remote_hash=}")
-                if version_key != check_version_key:
-                    pgroup.out("Stopping & restarting [source]")
-                    pgroup.kill()
-                    break
-            except Exception as e:
-                pgroup.out(e)
-            time.sleep(config["autoupdate"])
-        print("check_for_update[source] thread stopped")
-    
-    Thread(target=check_for_update, daemon=True).start()
 
 def run_python(config, pgroup: ProcessGroup):
     source_dir = config["source_dir"]
@@ -69,44 +69,27 @@ def run_python(config, pgroup: ProcessGroup):
 
 def main():
     main_group = ProcessGroup()
-    current_pgroup = [None]
-    local_hash = main_group.get_stdout(main_group.run("git rev-parse HEAD"))
-    def check_for_update():
-        nonlocal current_pgroup, local_hash
-        while main_group.running:
-            try:
-                main_group.out("Checking for update [pictrl]")
-                main_group.run(f"git fetch origin", timeout=120)
-                main_group.out("Checking for update [pictrl] 1")
-                remote_hash = main_group.get_stdout(main_group.run("git rev-parse refs/remotes/origin/HEAD", timeout=120))
-                main_group.out(f"{local_hash=}")
-                main_group.out(f"{remote_hash=}")
-                if local_hash != remote_hash:
-                    main_group.out("Stopping & restarting [pictrl]")
-                    main_group.kill()
-                    active_pgroup = current_pgroup[0]
-                    if active_pgroup:
-                        active_pgroup.kill()
-                    break
-            except Exception as e:
-                main_group.out(e)
-            time.sleep(60)
-        print("check_for_update[pictrl] thread stopped")
-    
-    Thread(target=check_for_update, daemon=True).start()
+    active_pgroup_ref = [None]
+    def kill_active_pgroup():
+        nonlocal active_pgroup_ref
+        active_pgroup = active_pgroup_ref[0]
+        if active_pgroup:
+            active_pgroup.kill()
+    autoupdate("pictrl", main_group, on_restart=kill_active_pgroup)
 
     while main_group.running:
         config = get_config()
         pgroup = ProcessGroup()
-        current_pgroup[0] = pgroup
+        active_pgroup_ref[0] = pgroup
         try:
             clone(config, pgroup)
             if config["type"] == "python":
                 run_python(config, pgroup)
-                pgroup.wait()
             else:
                 print(f"Unsupported config type {config['type']}")
                 break
+            autoupdate("source", pgroup, cwd=config["source_dir"])
+            pgroup.wait()
         except Exception as e:
             print(e)
             time.sleep(30)
