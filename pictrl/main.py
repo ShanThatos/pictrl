@@ -20,6 +20,7 @@ def clone(config, pgroup: ProcessGroup):
     def check_for_update():
         nonlocal pgroup, version_key
         while pgroup.running:
+            pgroup.out("Checking for update[source]")
             pgroup.run(f"{per_os("", "sudo ")}git fetch origin", cwd=config["source_dir"])
             remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=config["source_dir"]))
             check_version_key = f"{json.dumps(get_config(), sort_keys=True)}-{remote_hash}"
@@ -69,6 +70,7 @@ def main():
     def check_for_update():
         nonlocal current_pgroup, local_hash
         while main_group.running:
+            main_group.out("Checking for update[pictrl]")
             main_group.run(f"{per_os("", "sudo ")}git fetch origin")
             remote_hash = main_group.get_stdout(main_group.run("git rev-parse refs/remotes/origin/HEAD"))
 
