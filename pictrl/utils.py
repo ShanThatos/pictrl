@@ -54,6 +54,9 @@ class ProcessGroup:
             time.sleep(1)
         if rc != 0:
             raise subprocess.CalledProcessError(rc, command)
+        process.stdout.close()
+        process.stderr.close()
+        process.kill()
         return id
     
     def run_async(self, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, block: bool = False):
@@ -68,7 +71,7 @@ class ProcessGroup:
                     break
 
         self.__process_id_counter += 1
-        process = Popen(command, shell=True, bufsize=1, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=cwd, env=env)
+        process = Popen(command, shell=True, bufsize=1, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=cwd, env=env)
         setattr(process, "__block", block)
         self.out(f"> {command}")
         Thread(target=self.capture_output, args=(command, process, self.__process_id_counter, "stdout", stream), daemon=True).start()
