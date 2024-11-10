@@ -50,17 +50,21 @@ class ProcessGroup:
     def run(self, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = False, timeout: Optional[float] = None):
         id, process = self.__start_process(command, cwd=cwd, env=env, stream=stream)
         rc = process.wait(timeout=timeout)
+        print(f"Process {command=} after wait with rc {rc}")
         for _ in range(12):
             if getattr(process, "__stdout_finished", False) and getattr(process, "__stderr_finished", False):
                 break
             time.sleep(5)
         else:
             fully_kill_process(process)
-            raise TimeoutError(f"Timed out stdout & stderr never finished: {command}")
+            raise TimeoutError(f"Timed out stdout & stderr never finished: {command=}")
         if rc != 0:
             raise subprocess.CalledProcessError(rc, command)
+        print("Closing stdout")
         process.stdout.close()
+        print("Closing stderr")
         process.stderr.close()
+        print("Killing")
         process.kill()
         return id
     
