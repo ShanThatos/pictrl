@@ -192,7 +192,7 @@ def check_internet_restart(pgroup: ProcessGroup):
         while pgroup.running:
             time.sleep(300)
             try:
-                pgroup.run(f"ping -w {per_os('20000', '20')} google.com", stream=True)
+                pgroup.run(f"ping -w {per_os('5000', '5')} google.com", stream=True)
             except subprocess.CalledProcessError:
                 pgroup.out("No internet connection. Restarting...")
                 pgroup.run(per_os("shutdown /r", "sudo shutdown -r now"), stream=True)
