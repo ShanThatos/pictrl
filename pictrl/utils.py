@@ -9,12 +9,20 @@ import time
 
 from collections import deque
 from contextlib import closing
+from dataclasses import dataclass
 from pathlib import Path
 from subprocess import Popen
 from threading import Thread
 from typing import Callable, Deque, Dict, List, Literal, Optional, Tuple
 
 import psutil
+
+@dataclass
+class LogLine:
+    id: int
+    time: float
+    name: str
+    text: str
 
 DEFAULT_CONFIG = {
     "env": {},
@@ -41,14 +49,14 @@ class ProcessGroup:
     def __init__(self, limit: Optional[int] = 100000):
         self.__limit = limit
         self.__running = True
-        self.__stdout: Deque[Tuple[int, float, str]] = deque()
-        self.__stderr: Deque[Tuple[int, float, str]] = deque()
-        self.__output: Deque[Tuple[int, float, str]] = deque()
+        self.__stdout: Deque[LogLine] = deque()
+        self.__stderr: Deque[LogLine] = deque()
+        self.__output: Deque[LogLine] = deque()
         self.__processes: List[Popen[str]] = []
         self.__process_id_counter = 0
 
-    def run(self, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = False):
-        id, process = self.__start_process(command, cwd=cwd, env=env, stream=stream)
+    def run(self, name: str, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = False):
+        id, process = self.__start_process(name, command, cwd=cwd, env=env, stream=stream)
         rc = process.wait()
         while not getattr(process, "__stdout_finished", False) or not getattr(process, "__stderr_finished", False):
             time.sleep(1)
@@ -59,10 +67,10 @@ class ProcessGroup:
         process.kill()
         return id
     
-    def run_async(self, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, block: bool = False):
-        return self.__start_process(command, cwd=cwd, env=env, block=block)[0]
+    def run_async(self, name: str, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, block: bool = False):
+        return self.__start_process(name, command, cwd=cwd, env=env, block=block)[0]
     
-    def __start_process(self, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = True, block: bool = False):
+    def __start_process(self, name: str, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = True, block: bool = False):
         if len(self.__processes) >= 20:
             i = 0
             while i < len(self.__processes) and len(self.__processes) > 5:
@@ -74,21 +82,21 @@ class ProcessGroup:
         self.__process_id_counter += 1
         process = Popen(command, shell=True, bufsize=1, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=cwd, env=env)
         setattr(process, "__block", block)
-        self.out(f"> {command}")
-        Thread(target=self.capture_output, args=(process, self.__process_id_counter, "stdout", stream), daemon=True).start()
-        Thread(target=self.capture_output, args=(process, self.__process_id_counter, "stderr", stream), daemon=True).start()
+        self.out(name, f"> {command}")
+        Thread(target=self.capture_output, args=(name, process, self.__process_id_counter, "stdout", stream), daemon=True).start()
+        Thread(target=self.capture_output, args=(name, process, self.__process_id_counter, "stderr", stream), daemon=True).start()
         self.__processes.append(process)
         atexit.register(lambda: fully_kill_process(process))
         return self.__process_id_counter, process
 
-    def capture_output(self, process: Popen, id: int, capture: Literal["stdout", "stderr"] = "stdout", stream: bool = True):
+    def capture_output(self, name: str, process: Popen, id: int, capture: Literal["stdout", "stderr"] = "stdout", stream: bool = True):
         process_out = process.stdout if capture == "stdout" else process.stderr
         
         logs = [self.__output, (self.__stdout if capture == "stdout" else self.__stderr)]
         def add_to_logs(*lines: str):
             nonlocal self, id, capture, logs
             for log in logs:
-                log.extend((id, time.time(), line) for line in lines)
+                log.extend(LogLine(id, time.time(), name, line) for line in lines)
                 while self.__limit and len(log) > self.__limit:
                     log.popleft()
         
@@ -106,14 +114,14 @@ class ProcessGroup:
         fully_kill_process(process)
         setattr(process, f"__{capture}_finished", True)
     
-    def out(self, message: str):
+    def out(self, name: str, message: str):
         message = message.rstrip() + "\n"
         print(message, end="")
-        self.__stdout.append((0, time.time(), message))
-        self.__output.append((0, time.time(), message))
+        self.__stdout.append(LogLine(0, time.time(), name, message))
+        self.__output.append(LogLine(0, time.time(), name, message))
 
-    def __gather_output(self, output: Deque[Tuple[int, str]], id: Optional[int] = None):
-        return "".join(text for i, time, text in output if id is None or i == id).strip()
+    def __gather_output(self, output: Deque[LogLine], id: Optional[int] = None):
+        return "".join(line.text for line in output if id is None or line.id == id).strip()
 
     def get_stdout(self, id: Optional[int] = None):
         return self.__gather_output(self.__stdout, id)
@@ -163,26 +171,27 @@ def per_os(win: str, unix: str) -> str:
     return win if os.name == "nt" else unix
 
 def autoupdate(name: str, pgroup: ProcessGroup, cwd: Optional[str] = None, on_restart: Optional[Callable] = None):
-    local_hash = pgroup.get_stdout(pgroup.run("git rev-parse HEAD", cwd=cwd))
+    pgroup_name = f"{name}.autoupdate"
+    local_hash = pgroup.get_stdout(pgroup.run(pgroup_name, "git rev-parse HEAD", cwd=cwd))
     def check_for_update():
         nonlocal pgroup, local_hash
         while pgroup.running:
             try:
-                pgroup.out(f"Checking for update [{name}]")
-                pgroup.run(f"git fetch origin", cwd=cwd)
-                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=cwd))
-                pgroup.out(f"[{name}] {local_hash=}")
-                pgroup.out(f"[{name}] {remote_hash=}")
+                pgroup.out(pgroup_name, f"Checking for update [{name}]")
+                pgroup.run(pgroup_name, f"git fetch origin", cwd=cwd)
+                remote_hash = pgroup.get_stdout(pgroup.run(pgroup_name, "git rev-parse refs/remotes/origin/HEAD", cwd=cwd))
+                pgroup.out(pgroup_name, f"[{name}] {local_hash=}")
+                pgroup.out(pgroup_name, f"[{name}] {remote_hash=}")
                 if local_hash != remote_hash:
-                    pgroup.out(f"Stopping & restarting [{name}]")
+                    pgroup.out(pgroup_name, f"Stopping & restarting [{name}]")
                     pgroup.kill()
                     if on_restart:
                         on_restart()
                     break
             except Exception as e:
-                pgroup.out(e)
+                pgroup.out(pgroup_name, str(e))
             time.sleep(120)
-        print(f"check_for_update [{name}] thread stopped")
+        pgroup.out(pgroup_name, f"check_for_update [{name}] thread stopped")
     
     Thread(target=check_for_update, daemon=True).start()
 
@@ -192,8 +201,8 @@ def check_internet_restart(pgroup: ProcessGroup):
         while pgroup.running:
             time.sleep(300)
             try:
-                pgroup.run(f"ping -w {per_os('5000', '5')} google.com", stream=True)
+                pgroup.run("pictrl.internet", f"ping -w {per_os('5000', '5')} google.com", stream=True)
             except subprocess.CalledProcessError:
-                pgroup.out("No internet connection. Restarting...")
-                pgroup.run(per_os("shutdown /r", "sudo shutdown -r now"), stream=True)
+                pgroup.out("pictrl.internet", "No internet connection. Restarting...")
+                pgroup.run("pictrl.internet", per_os("shutdown /r", "sudo shutdown -r now"), stream=True)
     Thread(target=check, daemon=True).start()

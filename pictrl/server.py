@@ -9,7 +9,7 @@ from typing import List, Optional
 from flask import Flask, redirect, render_template, session, request, Blueprint
 
 from pictrl.cloudflared import start_tunnel
-from pictrl.utils import ProcessGroup, get_config
+from pictrl.utils import LogLine, ProcessGroup, get_config
 
 PGROUPS_REF: List[Optional[ProcessGroup]] = []
 
@@ -44,11 +44,23 @@ def logs():
         return redirect("/")
     
     current_time = time.time()
-    combined_output = PGROUPS_REF[0].output.copy()
+    start_time = request.args.get("start", type=float, default=current_time - 24 * 60 * 60)
+    end_time = request.args.get("end", type=float, default=current_time)
+    filters = request.args.get("filters", type=str, default="").split(",")
+
+    print(start_time, end_time, filters)
+
+    def check_filter(line: LogLine):
+        if not (start_time <= line.time <= end_time):
+            return False
+        return any(f"{line.name}.".startswith(f"{filter}.") for filter in filters)
+
+    output = PGROUPS_REF[0].output.copy()
     if PGROUPS_REF[1]:
-        combined_output += PGROUPS_REF[1].output
-    filtered_output = sorted((time, text) for id, time, text in combined_output if time > current_time - 3600)
-    full_output = "\n".join(f"{format_epoch_time(time)} {text.rstrip()}" for time, text in filtered_output)
+        output += PGROUPS_REF[1].output
+    
+    filtered_output = sorted((line.time, line.name, line.text) for line in output if check_filter(line))
+    full_output = "\n".join(f"{format_epoch_time(time)} [{name}] {text.rstrip()}" for time, name, text in filtered_output)
 
     return full_output
 
@@ -67,7 +79,7 @@ def run_pictrl_server(pgroups: List[Optional[ProcessGroup]]):
     global PGROUPS_REF
 
     if "secret" not in pictrl_server_config:
-        print("No secret key found in config, not starting log server")
+        pgroups[0].out("pictrl.server", "No secret key found in config, not starting log server")
     
     PGROUPS_REF = pgroups
 

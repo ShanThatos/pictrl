@@ -15,12 +15,6 @@
             background-color: rgb(9, 23, 37);
         }
 
-        .container {
-            max-width: 100vw;
-            min-height: 100vh;
-            padding: 5px 15px;
-        }
-
         .logs {
             overflow-wrap: anywhere;
             white-space: pre-wrap;
@@ -28,8 +22,117 @@
             color: #eeeeee;
         }
     </style>
-    <div class="container">
-        <pre class="logs" hx-get="/logs" hx-trigger="load, every 10s" hx-swap="innerHTML"></pre>
+    <div class="max-w-screen min-h-screen py-2 px-4">
+        <div>
+            <h1 class="text-3xl text-center text-neutral-100">PiCtrl Home</h1>
+            {% set all_filters = [["pictrl", "pictrl.autoupdate", "pictrl.internet"], ["source", "source.autoupdate", "source.run", "source.setup", "source.tunnel"]] %}
+            <div class="py-3 flex flex-col md:flex-row justify-center gap-10 text-neutral-200">
+                <div>
+                    {% for filtergroup in all_filters %}
+                        <div>
+                            <input class="aspect-square h-4" type="checkbox" id="fg-{{ filtergroup[0] }}">
+                            <label for="fg-{{ filtergroup[0] }}">{{ filtergroup[0] }}</label>
+                        </div>
+
+                        <div class="ml-6">
+                            {% for filter in filtergroup[1:] %}
+                                <div>
+                                    <input class="aspect-square h-4 opacity-100 disabled:opacity-60" type="checkbox" id="fg-{{ filter }}">
+                                    <label for="fg-{{ filter }}">{{ filter }}</label>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <div class="flex flex-col gap-4">
+                    <div>
+                        <label for="start">Start time</label><br>
+                        <input class="bg-neutral-700 p-1 rounded" type="datetime-local" id="start" >
+                    </div>
+                    <div>
+                        <label for="start">End time</label><br>
+                        <input class="bg-neutral-700 p-1 rounded" type="datetime-local" id="end" >
+                    </div>
+                </div>
+            </div>
+
+            <div id="logs-container" class="overflow-y-auto max-h-[70vh] border-2 border-neutral-600 rounded px-1">
+                <pre id="logs" class="logs" 
+                    hx-get="/logs" 
+                    hx-trigger="load delay:.5s, every 5s, load-logs" 
+                    hx-sync="this:replace"
+                    hx-swap="innerHTML" 
+                    hx-vals="js:{...getLogParams()}" 
+                    hx-on::before-request="checkScrolledToBottom()" 
+                    hx-on::after-request="scrollToBottomLogs()"
+                ></pre>
+            </div>
+        </div>
     </div>
+
+    <script>
+        var all_filters = {{ all_filters | tojson }};
+    </script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let savedFilters = (localStorage.getItem("pictrl.filters") || "").split(",");
+            all_filters.flat(2).forEach((filter) => {
+                document.getElementById(`fg-${filter}`).checked = savedFilters.includes(filter);
+            });
+
+            function saveFilters() {
+                localStorage.setItem("pictrl.filters", all_filters.flat(2).flatMap((filter) => document.getElementById(`fg-${filter}`).checked ? [filter] : []).join(","));
+            }
+
+            all_filters.forEach((filtergroup) => {
+                let group = filtergroup[0];
+                let filters = filtergroup.slice(1);
+                let groupCheckbox = document.getElementById(`fg-${group}`);
+                let filterCheckboxes = filters.map((filter) => document.getElementById(`fg-${filter}`));
+                groupCheckbox.addEventListener("change", function() {
+                    filterCheckboxes.forEach((checkbox) => {
+                        if (groupCheckbox.checked) {
+                            checkbox.setAttribute("disabled", true);
+                        } else {
+                            checkbox.removeAttribute("disabled");
+                        }
+                    });
+                });
+            });
+
+            all_filters.flat(2).forEach((filter) => {
+                document.getElementById(`fg-${filter}`).addEventListener("change", function() {
+                    saveFilters();
+                    htmx.trigger("#logs", "load-logs");
+                });
+            });
+        });
+
+
+
+        function parseDateTime(id) {
+            let value = document.getElementById(id).value;
+            return value ? new Date(value).getTime() / 1000 : null;
+        }
+        function getLogParams() {
+            return {
+                "start": parseDateTime("start"),
+                "end": parseDateTime("end"),
+                "filters": all_filters.flat(2).flatMap((filter) => document.getElementById(`fg-${filter}`).checked ? [filter] : []).join(",")
+            };
+        }
+
+        var keepAtBottomLogs = false;
+        function checkScrolledToBottom() {
+            var logs = document.getElementById("logs-container");
+            keepAtBottomLogs = logs.scrollHeight - logs.scrollTop - logs.clientHeight < 1;
+        }
+        function scrollToBottomLogs() {
+            if (keepAtBottomLogs) {
+                var logs = document.getElementById("logs-container");
+                logs.scrollTop = logs.scrollHeight;
+            }
+        }
+    </script>
 </body>
 </html>

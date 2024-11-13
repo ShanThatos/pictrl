@@ -10,22 +10,23 @@ from pictrl.server import run_pictrl_server
 from pictrl.utils import ProcessGroup, get_config, delete_folder, find_free_port, per_os, autoupdate, check_internet_restart
 
 def run_python(config, pgroup: ProcessGroup):
+    setup_pgroup_name = "source.setup"
+
     source_dir = config["source_dir"]
     if Path(source_dir).exists():
         delete_folder(source_dir)
-    pgroup.run(f"git clone {config["git"]} {source_dir}", stream=True)
+    pgroup.run(setup_pgroup_name, f"git clone {config["git"]} {source_dir}", stream=True)
 
     venv_dir = str(Path(source_dir).joinpath(".venv"))
     bin_dir = str(Path(venv_dir).joinpath(per_os("Scripts", "bin")))
     python_path = str(Path(bin_dir).joinpath("python"))
 
-    print("Setting up virtual environment")
-    pgroup.run(f"python -m venv {venv_dir}", stream=True)
-    pgroup.run(f"{python_path} -m pip install --upgrade pip", stream=True)
+    pgroup.run(setup_pgroup_name, f"python -m venv {venv_dir}", stream=True)
+    pgroup.run(setup_pgroup_name, f"{python_path} -m pip install --upgrade pip", stream=True)
     for req in ["requirements.txt", "req.txt"]:
         req_path = str(Path(source_dir).joinpath(req))
         if os.path.exists(req_path):
-            pgroup.run(f"{python_path} -m pip install -r {req_path}", stream=True)
+            pgroup.run(setup_pgroup_name, f"{python_path} -m pip install -r {req_path}", stream=True)
 
     env = os.environ.copy() | {"PYTHONUNBUFFERED": "1"} | config["env"]
     path_sep = per_os(";", ":")
@@ -34,11 +35,9 @@ def run_python(config, pgroup: ProcessGroup):
     port = find_free_port()
     env["PORT"] = str(port)
 
-    print("Running main command")
-    pgroup.run_async(config["command"], env=env, cwd=source_dir, block=True)
+    pgroup.run_async("source.run", config["command"], env=env, cwd=source_dir, block=True)
     if "tunnel" in config and config["tunnel"]:
-        print("Starting tunnel")
-        start_tunnel(config["tunnel"], port, pgroup, "./config/source-tunnel-creds.json")
+        start_tunnel("source.tunnel", config["tunnel"], port, pgroup, "./config/source-tunnel-creds.json")
     atexit.register(pgroup.kill)
 
 def main():
@@ -60,12 +59,12 @@ def main():
             if config["type"] == "python":
                 run_python(config, pgroups[1])
             else:
-                print(f"Unsupported config type {config['type']}")
+                main_group.out("pictrl", f"Unsupported config type {config['type']}")
                 break
             autoupdate("source", pgroups[1], cwd=config["source_dir"])
             pgroups[1].wait()
         except Exception as e:
-            print(e)
+            main_group.out("pictrl", str(e))
             time.sleep(30)
         finally:
             pgroups[1].kill()
