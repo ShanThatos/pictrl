@@ -1,59 +1,20 @@
 import atexit
 import os
-from subprocess import CalledProcessError
 import time
 
 from pathlib import Path
-from threading import Thread
-from typing import Callable, Optional
+from typing import List, Optional
 
 from pictrl.cloudflared import start_tunnel
-from pictrl.utils import ProcessGroup, get_config, delete_folder, find_free_port, per_os
+from pictrl.server import run_pictrl_server
+from pictrl.utils import ProcessGroup, get_config, delete_folder, find_free_port, per_os, autoupdate, check_internet_restart
 
-def autoupdate(name: str, pgroup: ProcessGroup, cwd: Optional[str] = None, on_restart: Optional[Callable] = None):
-    local_hash = pgroup.get_stdout(pgroup.run("git rev-parse HEAD", cwd=cwd))
-    def check_for_update():
-        nonlocal pgroup, local_hash
-        while pgroup.running:
-            try:
-                pgroup.out(f"Checking for update [{name}]")
-                pgroup.run(f"git fetch origin", cwd=cwd)
-                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=cwd))
-                pgroup.out(f"[{name}] {local_hash=}")
-                pgroup.out(f"[{name}] {remote_hash=}")
-                if local_hash != remote_hash:
-                    pgroup.out(f"Stopping & restarting [{name}]")
-                    pgroup.kill()
-                    if on_restart:
-                        on_restart()
-                    break
-            except Exception as e:
-                pgroup.out(e)
-            time.sleep(60)
-        print(f"check_for_update [{name}] thread stopped")
-    
-    Thread(target=check_for_update, daemon=True).start()
-
-def check_internet(pgroup: ProcessGroup):
-    def check():
-        nonlocal pgroup
-        while pgroup.running:
-            time.sleep(300)
-            try:
-                pgroup.run(f"ping -w {per_os('10000', '10')} google.com", stream=True)
-            except CalledProcessError:
-                pgroup.out("No internet connection. Restarting...")
-                pgroup.run(per_os("shutdown /r", "sudo shutdown -r now"), stream=True)
-    Thread(target=check, daemon=True).start()
-
-def clone(config, pgroup: ProcessGroup):
+def run_python(config, pgroup: ProcessGroup):
     source_dir = config["source_dir"]
     if Path(source_dir).exists():
         delete_folder(source_dir)
     pgroup.run(f"git clone {config["git"]} {source_dir}", stream=True)
 
-def run_python(config, pgroup: ProcessGroup):
-    source_dir = config["source_dir"]
     venv_dir = str(Path(source_dir).joinpath(".venv"))
     bin_dir = str(Path(venv_dir).joinpath(per_os("Scripts", "bin")))
     python_path = str(Path(bin_dir).joinpath("python"))
@@ -82,33 +43,32 @@ def run_python(config, pgroup: ProcessGroup):
 
 def main():
     main_group = ProcessGroup()
-    active_pgroup_ref = [None]
+    pgroups: List[Optional[ProcessGroup]] = [main_group, None]
+    run_pictrl_server(pgroups)
+
     def kill_active_pgroup():
-        nonlocal active_pgroup_ref
-        active_pgroup = active_pgroup_ref[0]
-        if active_pgroup:
+        nonlocal pgroups
+        if active_pgroup := pgroups[1]:
             active_pgroup.kill()
     autoupdate("pictrl", main_group, on_restart=kill_active_pgroup)
-    check_internet(main_group)
+    check_internet_restart(main_group)
 
     while main_group.running:
         config = get_config()
-        pgroup = ProcessGroup()
-        active_pgroup_ref[0] = pgroup
+        pgroups[1] = ProcessGroup()
         try:
-            clone(config, pgroup)
             if config["type"] == "python":
-                run_python(config, pgroup)
+                run_python(config, pgroups[1])
             else:
                 print(f"Unsupported config type {config['type']}")
                 break
-            autoupdate("source", pgroup, cwd=config["source_dir"])
-            pgroup.wait()
+            autoupdate("source", pgroups[1], cwd=config["source_dir"])
+            pgroups[1].wait()
         except Exception as e:
             print(e)
             time.sleep(30)
         finally:
-            pgroup.kill()
+            pgroups[1].kill()
 
 if __name__ == "__main__":
     main()

@@ -12,7 +12,7 @@ from contextlib import closing
 from pathlib import Path
 from subprocess import Popen
 from threading import Thread
-from typing import Deque, Dict, List, Literal, Optional, Tuple
+from typing import Callable, Deque, Dict, List, Literal, Optional, Tuple
 
 import psutil
 
@@ -38,12 +38,12 @@ def fully_kill_process(process: Optional[Popen]):
         pass
 
 class ProcessGroup:
-    def __init__(self, limit: Optional[int] = None):
+    def __init__(self, limit: Optional[int] = 100000):
         self.__limit = limit
         self.__running = True
-        self.__stdout: Deque[Tuple[int, str]] = deque()
-        self.__stderr: Deque[Tuple[int, str]] = deque()
-        self.__output: Deque[Tuple[int, str]] = deque()
+        self.__stdout: Deque[Tuple[int, float, str]] = deque()
+        self.__stderr: Deque[Tuple[int, float, str]] = deque()
+        self.__output: Deque[Tuple[int, float, str]] = deque()
         self.__processes: List[Popen[str]] = []
         self.__process_id_counter = 0
 
@@ -75,20 +75,20 @@ class ProcessGroup:
         process = Popen(command, shell=True, bufsize=1, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=cwd, env=env)
         setattr(process, "__block", block)
         self.out(f"> {command}")
-        Thread(target=self.capture_output, args=(command, process, self.__process_id_counter, "stdout", stream), daemon=True).start()
-        Thread(target=self.capture_output, args=(command, process, self.__process_id_counter, "stderr", stream), daemon=True).start()
+        Thread(target=self.capture_output, args=(process, self.__process_id_counter, "stdout", stream), daemon=True).start()
+        Thread(target=self.capture_output, args=(process, self.__process_id_counter, "stderr", stream), daemon=True).start()
         self.__processes.append(process)
         atexit.register(lambda: fully_kill_process(process))
         return self.__process_id_counter, process
 
-    def capture_output(self, command: str, process: Popen, id: int, capture: Literal["stdout", "stderr"] = "stdout", stream: bool = True):
+    def capture_output(self, process: Popen, id: int, capture: Literal["stdout", "stderr"] = "stdout", stream: bool = True):
         process_out = process.stdout if capture == "stdout" else process.stderr
         
         logs = [self.__output, (self.__stdout if capture == "stdout" else self.__stderr)]
         def add_to_logs(*lines: str):
             nonlocal self, id, capture, logs
             for log in logs:
-                log.extend((id, line) for line in lines)
+                log.extend((id, time.time(), line) for line in lines)
                 while self.__limit and len(log) > self.__limit:
                     log.popleft()
         
@@ -109,11 +109,11 @@ class ProcessGroup:
     def out(self, message: str):
         message = message.rstrip() + "\n"
         print(message, end="")
-        self.__stdout.append((0, message))
-        self.__output.append((0, message))
+        self.__stdout.append((0, time.time(), message))
+        self.__output.append((0, time.time(), message))
 
     def __gather_output(self, output: Deque[Tuple[int, str]], id: Optional[int] = None):
-        return "".join(text for i, text in output if id is None or i == id).strip()
+        return "".join(text for i, time, text in output if id is None or i == id).strip()
 
     def get_stdout(self, id: Optional[int] = None):
         return self.__gather_output(self.__stdout, id)
@@ -123,6 +123,10 @@ class ProcessGroup:
     
     def get_output(self, id: Optional[int] = None):
         return self.__gather_output(self.__output, id)
+
+    @property
+    def output(self):
+        return self.__output
 
     @property
     def running(self):
@@ -157,3 +161,39 @@ def find_free_port():
 
 def per_os(win: str, unix: str) -> str:
     return win if os.name == "nt" else unix
+
+def autoupdate(name: str, pgroup: ProcessGroup, cwd: Optional[str] = None, on_restart: Optional[Callable] = None):
+    local_hash = pgroup.get_stdout(pgroup.run("git rev-parse HEAD", cwd=cwd))
+    def check_for_update():
+        nonlocal pgroup, local_hash
+        while pgroup.running:
+            try:
+                pgroup.out(f"Checking for update [{name}]")
+                pgroup.run(f"git fetch origin", cwd=cwd)
+                remote_hash = pgroup.get_stdout(pgroup.run("git rev-parse refs/remotes/origin/HEAD", cwd=cwd))
+                pgroup.out(f"[{name}] {local_hash=}")
+                pgroup.out(f"[{name}] {remote_hash=}")
+                if local_hash != remote_hash:
+                    pgroup.out(f"Stopping & restarting [{name}]")
+                    pgroup.kill()
+                    if on_restart:
+                        on_restart()
+                    break
+            except Exception as e:
+                pgroup.out(e)
+            time.sleep(120)
+        print(f"check_for_update [{name}] thread stopped")
+    
+    Thread(target=check_for_update, daemon=True).start()
+
+def check_internet_restart(pgroup: ProcessGroup):
+    def check():
+        nonlocal pgroup
+        while pgroup.running:
+            time.sleep(300)
+            try:
+                pgroup.run(f"ping -w {per_os('20000', '20')} google.com", stream=True)
+            except subprocess.CalledProcessError:
+                pgroup.out("No internet connection. Restarting...")
+                pgroup.run(per_os("shutdown /r", "sudo shutdown -r now"), stream=True)
+    Thread(target=check, daemon=True).start()
