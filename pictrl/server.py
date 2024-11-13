@@ -44,7 +44,9 @@ def logs():
         return redirect("/")
     
     current_time = time.time()
-    combined_output = sum((pg.output for pg in PGROUPS_REF if pg), [])
+    combined_output = PGROUPS_REF[0].output.copy()
+    if PGROUPS_REF[1]:
+        combined_output += PGROUPS_REF[1].output
     filtered_output = sorted((time, text) for id, time, text in combined_output if time > current_time - 3600)
     full_output = "\n".join(f"{format_epoch_time(time)} {text.rstrip()}" for time, text in filtered_output)
 
