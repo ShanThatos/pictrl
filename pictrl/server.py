@@ -9,7 +9,7 @@ from typing import List, Optional
 from flask import Flask, redirect, render_template, session, request, Blueprint
 
 from pictrl.cloudflared import start_tunnel
-from pictrl.utils import LogLine, ProcessGroup, get_config
+from pictrl.utils import LogLine, ProcessGroup, get_config, per_os
 
 PGROUPS_REF: List[Optional[ProcessGroup]] = []
 
@@ -48,8 +48,6 @@ def logs():
     end_time = request.args.get("end", type=float, default=current_time)
     filters = request.args.get("filters", type=str, default="").split(",")
 
-    print(start_time, end_time, filters)
-
     def check_filter(line: LogLine):
         if not (start_time <= line.time <= end_time):
             return False
@@ -74,6 +72,25 @@ def login():
 def logout():
     session.pop("is_admin")
     return redirect("/")
+
+@router.get("/restart")
+def restart():
+    if not session.get("is_admin", False):
+        return redirect("/")
+    current_pgroup = PGROUPS_REF[1]
+    if current_pgroup and current_pgroup.running:
+        PGROUPS_REF[0].out("pictrl.server", "Restarting...")
+        current_pgroup.kill()
+        return "Restarted"
+    return "No process to restart"
+
+@router.get("/reboot")
+def reboot():
+    if not session.get("is_admin", False):
+        return redirect("/")
+    PGROUPS_REF[0].out("pictrl.server", "Rebooting...")
+    PGROUPS_REF[0].run("pictrl.internet", per_os("shutdown /r", "sudo shutdown -r now"))
+    return "Rebooting"
 
 def run_pictrl_server(pgroups: List[Optional[ProcessGroup]]):
     global PGROUPS_REF

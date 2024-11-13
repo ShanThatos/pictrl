@@ -53,6 +53,9 @@
                         <label for="start">End time</label><br>
                         <input class="bg-neutral-700 p-1 rounded" type="datetime-local" id="end" >
                     </div>
+                    <div class="flex flex-row justify-center">
+                        <button class="rounded px-3 py-1 bg-blue-600 hover:opacity-80 active:opacity-60" hx-get="/restart" hx-swap="none">Restart</button>
+                    </div>
                 </div>
             </div>
 
@@ -84,20 +87,24 @@
                 localStorage.setItem("pictrl.filters", all_filters.flat(2).flatMap((filter) => document.getElementById(`fg-${filter}`).checked ? [filter] : []).join(","));
             }
 
-            all_filters.forEach((filtergroup) => {
-                let group = filtergroup[0];
-                let filters = filtergroup.slice(1);
-                let groupCheckbox = document.getElementById(`fg-${group}`);
-                let filterCheckboxes = filters.map((filter) => document.getElementById(`fg-${filter}`));
-                groupCheckbox.addEventListener("change", function() {
-                    filterCheckboxes.forEach((checkbox) => {
-                        if (groupCheckbox.checked) {
+            function updateFilters() {
+                all_filters.forEach((filtergroup) => {
+                    let groupChecked = document.getElementById(`fg-${filtergroup[0]}`).checked;
+                    filtergroup.slice(1).forEach((filter) => {
+                        let checkbox = document.getElementById(`fg-${filter}`);
+                        if (groupChecked) {
                             checkbox.setAttribute("disabled", true);
                         } else {
                             checkbox.removeAttribute("disabled");
                         }
                     });
                 });
+            }
+
+            updateFilters();
+
+            all_filters.forEach((filtergroup) => {
+                document.getElementById(`fg-${filtergroup[0]}`).addEventListener("change", updateFilters);
             });
 
             all_filters.flat(2).forEach((filter) => {
@@ -107,8 +114,6 @@
                 });
             });
         });
-
-
 
         function parseDateTime(id) {
             let value = document.getElementById(id).value;
