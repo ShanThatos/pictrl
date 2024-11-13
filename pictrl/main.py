@@ -1,5 +1,6 @@
 import atexit
 import os
+from subprocess import CalledProcessError
 import time
 
 from pathlib import Path
@@ -32,6 +33,18 @@ def autoupdate(name: str, pgroup: ProcessGroup, cwd: Optional[str] = None, on_re
         print(f"check_for_update [{name}] thread stopped")
     
     Thread(target=check_for_update, daemon=True).start()
+
+def check_internet(pgroup: ProcessGroup):
+    def check():
+        nonlocal pgroup
+        while pgroup.running:
+            time.sleep(300)
+            try:
+                pgroup.run(f"ping -w {per_os('10000', '10')} google.com", stream=True)
+            except CalledProcessError:
+                pgroup.out("No internet connection. Restarting...")
+                pgroup.run(per_os("shutdown /r", "sudo shutdown -r now"), stream=True)
+    Thread(target=check, daemon=True).start()
 
 def clone(config, pgroup: ProcessGroup):
     source_dir = config["source_dir"]
@@ -76,6 +89,7 @@ def main():
         if active_pgroup:
             active_pgroup.kill()
     autoupdate("pictrl", main_group, on_restart=kill_active_pgroup)
+    check_internet(main_group)
 
     while main_group.running:
         config = get_config()
