@@ -38,7 +38,7 @@ def run_python(config, pgroup: ProcessGroup):
     pgroup.run_async(config["command"], env=env, cwd=source_dir, block=True)
     if "tunnel" in config and config["tunnel"]:
         print("Starting tunnel")
-        start_tunnel(config["tunnel"], port, pgroup)
+        start_tunnel(config["tunnel"], port, pgroup, "./config/source-tunnel-creds.json")
     atexit.register(pgroup.kill)
 
 def main():

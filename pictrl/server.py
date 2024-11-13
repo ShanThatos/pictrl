@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from flask import Flask, redirect, render_template, session, request, Blueprint
 
+from pictrl.cloudflared import start_tunnel
 from pictrl.utils import ProcessGroup, get_config
 
 PGROUPS_REF: List[Optional[ProcessGroup]] = []
@@ -65,7 +66,6 @@ def run_pictrl_server(pgroups: List[Optional[ProcessGroup]]):
 
     if "secret" not in pictrl_server_config:
         print("No secret key found in config, not starting log server")
-        return
     
     PGROUPS_REF = pgroups
 
@@ -81,3 +81,6 @@ def run_pictrl_server(pgroups: List[Optional[ProcessGroup]]):
         "load_dotenv": False,
     }
     Thread(target=app.run, kwargs=kwargs, daemon=True).start()
+
+    if "tunnel" in pictrl_server_config:
+        start_tunnel(pictrl_server_config["tunnel"], 80, pgroups[0], "./config/pictrl-tunnel-creds.json")
