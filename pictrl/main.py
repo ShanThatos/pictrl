@@ -42,7 +42,7 @@ def run_python(config, pgroup: ProcessGroup):
 
 def main():
     main_group = ProcessGroup()
-    pgroups: List[Optional[ProcessGroup]] = [main_group, None]
+    pgroups: List[Optional[ProcessGroup]] = [main_group, ProcessGroup()]
     run_pictrl_server(pgroups)
 
     def kill_active_pgroup():
@@ -54,7 +54,7 @@ def main():
 
     while main_group.running:
         config = get_config()
-        pgroups[1] = ProcessGroup()
+        pgroups[1].restart()
         try:
             if config["type"] == "python":
                 run_python(config, pgroups[1])

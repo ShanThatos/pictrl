@@ -55,6 +55,11 @@ class ProcessGroup:
         self.__processes: List[Popen[str]] = []
         self.__process_id_counter = 0
 
+    def restart(self):
+        self.kill()
+        self.__running = True
+        self.__processes.clear()
+
     def run(self, name: str, command: str, cwd: Optional[str] = None, env: Optional[Dict[str, str]] = None, stream: bool = False):
         id, process = self.__start_process(name, command, cwd=cwd, env=env, stream=stream)
         rc = process.wait()
@@ -144,6 +149,7 @@ class ProcessGroup:
         self.__running = False
         for process in self.__processes:
             fully_kill_process(process)
+        self.__processes.clear()
 
     def wait(self):
         for process in self.__processes:
