@@ -25,7 +25,7 @@
     <div class="max-w-screen min-h-screen py-2 px-4">
         <div>
             <h1 class="text-3xl text-center text-neutral-100">PiCtrl Home</h1>
-            {% set all_filters = [["pictrl", "pictrl.autoupdate", "pictrl.internet", "pictrl.server"], ["source", "source.autoupdate", "source.run", "source.setup", "source.tunnel"]] %}
+            {% set all_filters = [["pictrl", "pictrl.autoupdate", "pictrl.internet", "pictrl.server", "pictrl.tunnel"], ["source", "source.autoupdate", "source.run", "source.setup", "source.tunnel"]] %}
             <div class="py-3 flex flex-col md:flex-row justify-center gap-10 text-neutral-200">
                 <div>
                     {% for filtergroup in all_filters %}

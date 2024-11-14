@@ -151,4 +151,4 @@ def run_pictrl_server(pgroups: List[ProcessGroup]):
     Thread(target=save_logs_thread, daemon=True).start()
 
     if "tunnel" in pictrl_server_config:
-        start_tunnel("pictrl.server", pictrl_server_config["tunnel"], 80, pgroups[0], "./config/pictrl-tunnel-creds.json")
+        start_tunnel("pictrl.tunnel", pictrl_server_config["tunnel"], 80, pgroups[0], "./config/pictrl-tunnel-creds.json")
