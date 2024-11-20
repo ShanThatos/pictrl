@@ -112,6 +112,8 @@ def get_logs(start_time: float, end_time: float, filters: List[str]):
     filter_add_logs(PGROUPS_REF[0].output)
     filter_add_logs(PGROUPS_REF[1].output)
 
+    logs.sort(key=lambda line: line.time)
+
     return logs
 
 def save_logs():
