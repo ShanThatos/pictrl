@@ -54,20 +54,20 @@ def main():
 
     while main_group.running:
         config = get_config()
-        pgroups[1].restart()
+        pgroups[1].reset()
         try:
             if config["type"] == "python":
                 run_python(config, pgroups[1])
             else:
-                main_group.out("pictrl", f"Unsupported config type {config['type']}")
+                main_group.out("pictrl.run", f"Unsupported config type {config['type']}")
                 break
             autoupdate("source", pgroups[1], cwd=config["source_dir"])
             pgroups[1].wait()
         except Exception as e:
-            main_group.out("pictrl", str(e))
-            time.sleep(30)
-        finally:
+            main_group.out("pictrl.run", str(e))
+            main_group.out("pictrl.run", "Trying again in 2 minutes...")
             pgroups[1].kill()
+            time.sleep(120)
 
 if __name__ == "__main__":
     main()

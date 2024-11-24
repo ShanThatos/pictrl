@@ -55,7 +55,7 @@ class ProcessGroup:
         self.__processes: List[Popen[str]] = []
         self.__process_id_counter = 0
 
-    def restart(self):
+    def reset(self):
         self.kill()
         self.__running = True
         self.__processes.clear()

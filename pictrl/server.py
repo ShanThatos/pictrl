@@ -152,5 +152,15 @@ def run_pictrl_server(pgroups: List[ProcessGroup]):
             time.sleep(15)
     Thread(target=save_logs_thread, daemon=True).start()
 
+    def reboot_thread():
+        current_dt = datetime.datetime.now()
+        reboot_time = current_dt.replace(hour=2, minute=0, second=0, microsecond=0)
+        while reboot_time < current_dt:
+            reboot_time += datetime.timedelta(days=1)
+        time_until_reboot = (reboot_time - current_dt).total_seconds()
+        time.sleep(time_until_reboot)
+        reboot()
+    Thread(target=reboot_thread, daemon=True).start()
+
     if "tunnel" in pictrl_server_config:
         start_tunnel("pictrl.tunnel", pictrl_server_config["tunnel"], 80, pgroups[0], "./config/pictrl-tunnel-creds.json")
